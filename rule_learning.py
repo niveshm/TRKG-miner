@@ -37,7 +37,7 @@ class RuleLearning:
             back_conf, forw_conf, back_rule_support, forw_rule_support, back_body_support, forw_body_support = self.estimate_link_star_confidence(rule)
             rule['back_conf'] = back_conf
             rule['forw_conf'] = forw_conf
-            rule["conf"] = (back_conf + forw_conf) / 2
+            rule["conf"] = max(back_conf, forw_conf)
             rule['back_rule_supp'] = back_rule_support
             rule['forw_rule_supp'] = forw_rule_support
             rule['back_body_supp'] = back_body_support
