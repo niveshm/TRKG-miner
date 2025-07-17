@@ -102,13 +102,14 @@ for i in range(num_samples):
     if all_candidates.get(i, None):
         candidates = all_candidates[i]
     else:
-        print(".", end=" ")
+        # print(".", end=" ")
         candidates = baseline_candidates(
             test_query[1], data.edges, obj_dist, rel_obj_dist
         )
     candidates = filter_candidates(test_query, candidates, test_data.all_edges)
     rank = calculate_rank(test_query[2], candidates, num_entities)
 
+    # print()
     if rank:
         if rank <= 10:
             hits_10 += 1

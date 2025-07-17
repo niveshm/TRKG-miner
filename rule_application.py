@@ -27,11 +27,15 @@ def filter_rules(rules_dict, min_conf, min_body_supp, rule_lengths):
         new_rules_dict[k] = []
         for rule in rules_dict[k]:
             if rule["type"] == "link_star":
+                # cond = (
+                #     (rule["back_conf"] >= min_conf)
+                #     and (rule["forw_conf"] >= min_conf)
+                #     and (rule["back_body_supp"] >= min_body_supp)
+                #     and (rule["forw_body_supp"] >= min_body_supp)
+                # )
                 cond = (
-                    (rule["back_conf"] >= min_conf)
-                    and (rule["forw_conf"] >= min_conf)
-                    and (rule["back_body_supp"] >= min_body_supp)
-                    and (rule["forw_body_supp"] >= min_body_supp)
+                    (max(rule["back_conf"], rule["forw_conf"]) >= min_conf)
+                    and (max(rule["back_body_supp"], rule["forw_body_supp"]) >= min_body_supp)
                 )
             else:
                 cond = (

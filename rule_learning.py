@@ -1,6 +1,6 @@
 
 from data import Edge, Graph
-import random
+# import random
 import os
 import datetime
 from datetime import timedelta
@@ -13,7 +13,7 @@ class RuleLearning:
     def __init__(self, data:Graph, delta=1):
         self.data = data
         self.rules = dict()
-        self. output_dir = f'./outputs/{data.database}/rules'
+        self.output_dir = f'./outputs/{data.database}/rules'
         if not os.path.exists(self.output_dir):
             os.makedirs(self.output_dir)
 
@@ -255,7 +255,7 @@ class RuleLearning:
     def sample_body(self, body_rels, var_cnst, rule_type='cyclic'):
 
         # breakpoint()
-        start_edge = random.choice(self.data.edges[body_rels[0]])
+        start_edge = np.random.choice(self.data.edges[body_rels[0]])
         body = [start_edge]
         curr_node = start_edge.tail
         curr_ts = start_edge.time
@@ -273,7 +273,7 @@ class RuleLearning:
             # breakpoint()
             if not edges:
                 return False, body, None
-            next_edge = random.choice(edges)
+            next_edge = np.random.choice(edges)
             body.append(next_edge)
             curr_node = next_edge.tail
             curr_ts = next_edge.time

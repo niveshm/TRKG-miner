@@ -10,8 +10,10 @@ from rule_learning import rule_stats
 from score_functions import score_12
 import rule_application as ra
 
+
+# np.random.seed(12)
 dataset = 'icews14'
-rule_file_name = '2025-06-14_22:23_rules_len[1,2,3]_walks300_trans_exp_d1_acr0.5.pkl'
+rule_file_name = '2025-07-17_18:59_rules_len[1,2,3]_walks200_trans_exp_d1_acr1.pkl'
 # rule_file_name = "2025-06-10_16:02_rules_len[1, 2, 3]_walks200_trans_exp.pkl"
 dir_path = f'./outputs/{dataset}/rules/'
 rule_file_path = f'{dir_path}{rule_file_name}'
