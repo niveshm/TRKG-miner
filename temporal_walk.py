@@ -34,17 +34,20 @@ class TemporalWalk:
             return edges[np.random.choice(len(edges))]
         ## exponential sampling
         elif self.transition_dist == 'exp':
+            try:
+                tss = [edge.time for edge in edges]
+                tss = np.array(tss) - curr_ts
+                if not relaxed:
+                    prob = np.exp(list(map(lambda x: x.days, list(tss))))
+                else:
+                    prob = np.exp(list(map(lambda x: -1*abs(x.days), list(tss))))
 
-            tss = [edge.time for edge in edges]
-            tss = np.array(tss) - curr_ts
-            if not relaxed:
-                prob = np.exp(list(map(lambda x: x.days, list(tss))))
-            else:
-                prob = np.exp(list(map(lambda x: -1*abs(x.days), list(tss))))
+                prob = prob / np.sum(prob)
+                next_idx = np.random.choice(len(edges), p=prob)
+                next_edge = edges[next_idx]
+            except Exception as e:
+                next_edge = edges[np.random.choice(len(edges))]
             
-            prob = prob / np.sum(prob)
-            next_idx = np.random.choice(len(edges), p=prob)
-            next_edge = edges[next_idx]
             return next_edge
 
 
@@ -136,13 +139,17 @@ class TemporalWalk:
         if not edges:
             return None
         
-        tss = [edge.time for edge in edges]
-        tss = np.array(tss) - curr_ts
-        prob = np.exp(list(map(lambda x: x.days, list(tss))))
-        prob = prob / np.sum(prob)
-        next_idx = np.random.choice(len(edges), p=prob)
-        next_edge = edges[next_idx]
-        return next_edge if next_edge.time < curr_ts else None
+        try:
+            tss = [edge.time for edge in edges]
+            tss = np.array(tss) - curr_ts
+            prob = np.exp(list(map(lambda x: x.days, list(tss))))
+            prob = prob / np.sum(prob)
+            next_idx = np.random.choice(len(edges), p=prob)
+            next_edge = edges[next_idx]
+        except Exception as e:
+            next_edge = edges[np.random.choice(len(edges))]
+            
+        return next_edge
 
 
     
