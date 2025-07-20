@@ -110,7 +110,7 @@ class TemporalWalk:
         for ind in range(1, length):
             if ind == 1:
                 next_edges = self.data.get_edges(curr_node)
-                next_edges = [edge for edge in next_edges if edge.time < curr_ts]
+                next_edges = [edge for edge in next_edges if edge.time < (curr_ts + timedelta(days=self.delta))]
             else:
                 next_edges = self.data.get_edges(curr_node, remove_inv=True, ord=walk[-1])
                 next_edges = [edge for edge in next_edges if edge.time <= (curr_ts+timedelta(days=self.delta))]
@@ -131,6 +131,20 @@ class TemporalWalk:
             curr_ts = next_edge.time
         
         return True, walk
+
+    def sample_exp_edge(self, edges, curr_ts):
+        if not edges:
+            return None
+        
+        tss = [edge.time for edge in edges]
+        tss = np.array(tss) - curr_ts
+        prob = np.exp(list(map(lambda x: x.days, list(tss))))
+        prob = prob / np.sum(prob)
+        next_idx = np.random.choice(len(edges), p=prob)
+        next_edge = edges[next_idx]
+        return next_edge if next_edge.time < curr_ts else None
+
+
     
     def sample_link_star(self, rel_id):
         walk = []
@@ -140,8 +154,8 @@ class TemporalWalk:
         
         # breakpoint()
         backward_edges = self.data.get_edges(start_edge.head)
-        backward_edges = self.data.reverse_edges(backward_edges)
-        backward_edges = [edge for edge in backward_edges if edge.tail == start_edge.head and edge.time < start_edge.time and edge.head != start_edge.tail]
+        # backward_edges = self.data.reverse_edges(backward_edges)
+        backward_edges = [edge for edge in backward_edges if edge.head == start_edge.head and edge.time < start_edge.time and edge.head != start_edge.tail]
         
         forward_edges = self.data.get_edges(start_edge.tail)
         forward_edges = [edge for edge in forward_edges if edge.head == start_edge.tail and edge.time < start_edge.time and edge.tail != start_edge.head]
@@ -150,8 +164,13 @@ class TemporalWalk:
             return False, None
         
         walk.append(start_edge)
-        walk.append(backward_edges[np.random.choice(len(backward_edges))])
-        walk.append(forward_edges[np.random.choice(len(forward_edges))])
+        backward_edge = self.sample_exp_edge(backward_edges, start_edge.time)
+        forward_edge = self.sample_exp_edge(forward_edges, start_edge.time)
+        walk.append(self.data.inverse_edge(backward_edge))
+        walk.append(forward_edge)
+        # walk.append(backward_edges[np.random.choice(len(backward_edges))])
+        # walk.append(self.sample_exp_edge(forward_edges, start_edge.time))
+        # walk.append(forward_edges[np.random.choice(len(forward_edges))])
 
         return True, walk
         

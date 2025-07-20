@@ -23,7 +23,7 @@ def score1(rule, c=0):
     return score
 
 
-def score2(cands_walks, test_query_ts, lmbda, rule):
+def score2(cands_walks, test_query_ts, lmbda):
     """
     Calculate candidate score depending on the time difference.
 
@@ -36,12 +36,12 @@ def score2(cands_walks, test_query_ts, lmbda, rule):
         score (float): candidate score
     """
 
-    if rule["type"] == "link_star":
-        m1 = max(cands_walks["timestamp_0"])
-        m2 = max(cands_walks["timestamp_2"])
-        max_cands_ts = max(m1, m2)
-    else:
-        max_cands_ts = max(cands_walks["timestamp_0"])
+    # if rule["type"] == "link_star":
+    #     m1 = max(cands_walks["timestamp_0"])
+    #     m2 = max(cands_walks["timestamp_2"])
+    #     max_cands_ts = max(m1, m2)
+    # else:
+    max_cands_ts = max(cands_walks["timestamp_0"])
     
     score = np.exp(
         lmbda * (max_cands_ts - test_query_ts)
@@ -65,6 +65,6 @@ def score_12(rule, cands_walks, test_query_ts, lmbda, a):
         score (float): candidate score
     """
 
-    score = a * score1(rule) + (1 - a) * score2(cands_walks, test_query_ts, lmbda, rule)
+    score = a * score1(rule) + (1 - a) * score2(cands_walks, test_query_ts, lmbda)
 
     return score

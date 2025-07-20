@@ -27,16 +27,16 @@ def filter_rules(rules_dict, min_conf, min_body_supp, rule_lengths):
         new_rules_dict[k] = []
         for rule in rules_dict[k]:
             if rule["type"] == "link_star":
-                # cond = (
-                #     (rule["back_conf"] >= min_conf)
-                #     and (rule["forw_conf"] >= min_conf)
-                #     and (rule["back_body_supp"] >= min_body_supp)
-                #     and (rule["forw_body_supp"] >= min_body_supp)
-                # )
                 cond = (
-                    (max(rule["back_conf"], rule["forw_conf"]) >= min_conf)
-                    and (max(rule["back_body_supp"], rule["forw_body_supp"]) >= min_body_supp)
+                    (rule["back_conf"] >= min_conf)
+                    and (rule["forw_conf"] >= min_conf)
+                    and (rule["back_body_supp"] >= min_body_supp)
+                    and (rule["forw_body_supp"] >= min_body_supp)
                 )
+                # cond = (
+                #     (max(rule["back_conf"], rule["forw_conf"]) >= min_conf)
+                #     and (max(rule["back_body_supp"], rule["forw_body_supp"]) >= min_body_supp)
+                # )
             else:
                 cond = (
                     (rule["conf"] >= min_conf)
@@ -402,6 +402,13 @@ def check_var_constraints(var_constraints, rule_walks):
                 rule_walks["entity_" + str(const[i])]
                 == rule_walks["entity_" + str(const[i + 1])]
             ]
+
+    return rule_walks
+
+def check_var_constraints_acyclic(rule_walks):
+    
+    rule_walks = rule_walks[rule_walks["entity_0"] != rule_walks["entity_2"]]
+    rule_walks = rule_walks[rule_walks["entity_1"] != rule_walks["entity_3"]]
 
     return rule_walks
 

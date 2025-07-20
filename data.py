@@ -182,6 +182,11 @@ class Graph:
                 self.get_id_entity(tail), 
                 time)
 
+    def inverse_edge(self, edge:Edge) -> Edge:
+        inv_edge = edge.copy()
+        inv_edge.head, inv_edge.tail = inv_edge.tail, inv_edge.head
+        inv_edge.relation = self.inv_relation_id[inv_edge.relation]
+        return inv_edge
 
     def reverse_edges(self, edges: list[Edge]):
         reversed_edges = []

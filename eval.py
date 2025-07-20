@@ -70,7 +70,7 @@ def calculate_rank(test_query_answer, candidates, num_entities, setting="best"):
 
 
 dataset = 'icews14'
-candidates_file = '2025-06-14_22:23_rules_len[1,2,3]_walks300_trans_exp_d1_acr0.5_cands_r[1,2,3]_w0_score_12[0.1,0.5].pkl'
+candidates_file = '2025-07-19_23:57_rules_len[1,2,3]_walks200_trans_exp_d1_acr1_cands_r[1,2,3]_w0_score_12[0.1,0.5].pkl'
 dir_path = "./outputs/" + dataset + "/rules/"
 # dataset_dir = "./data/" + dataset + "/"
 data = Graph(dataset, "train", True)

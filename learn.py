@@ -1,5 +1,6 @@
 
 
+from datetime import datetime
 from joblib import Parallel, delayed
 from data import Graph
 from rule_learning import RuleLearning, rule_stats
@@ -34,7 +35,10 @@ def learn_rules(i, batch_size):
     rule_learner = RuleLearning(data, delta=delta)
 
     start_idx = i * batch_size
-    end_idx = min((i + 1) * batch_size, len(relations))
+    end_idx = (i+1)*batch_size #min((i + 1) * batch_size, len(relations))
+    if len(relations) - end_idx < batch_size:
+        end_idx = len(relations)
+    
     idx_range = range(start_idx, end_idx)
     print(f"Processing batch {i + 1}/{num_process} with batch size {end_idx-start_idx}")
 
@@ -85,9 +89,15 @@ def learn_rules(i, batch_size):
 
 batch_size = len(relations) // num_process
 # print(batch_size)
+start_time = datetime.now()
 output = Parallel(n_jobs=num_process)(
     delayed(learn_rules)(i, batch_size) for i in range(num_process)
 )
+end_time = datetime.now()
+total_time = (end_time - start_time).seconds
+print(f"Time taken for learning rules: {total_time} seconds")
+
+# breakpoint()
 
 all_rules = output[0]
 for i in range(1, num_process):

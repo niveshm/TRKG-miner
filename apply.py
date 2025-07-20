@@ -13,7 +13,7 @@ import rule_application as ra
 
 # np.random.seed(12)
 dataset = 'icews14'
-rule_file_name = '2025-07-17_18:59_rules_len[1,2,3]_walks200_trans_exp_d1_acr1.pkl'
+rule_file_name = '2025-07-19_23:57_rules_len[1,2,3]_walks200_trans_exp_d1_acr1.pkl'
 # rule_file_name = "2025-06-10_16:02_rules_len[1, 2, 3]_walks200_trans_exp.pkl"
 dir_path = f'./outputs/{dataset}/rules/'
 rule_file_path = f'{dir_path}{rule_file_name}'
@@ -52,7 +52,11 @@ args = [[0.1, 0.5]] # lambda, a
 
 def apply_rules(i, batch_size):
     start_idx = i * batch_size
-    end_idx = min((i + 1) * batch_size, len(test_data.all_edges))
+    end_idx = (i + 1) * batch_size #min((i + 1) * batch_size, len(test_data.all_edges))
+    if len(test_data.all_edges) - end_idx < batch_size:
+        end_idx = len(test_data.all_edges)
+    
+
     idx_range = range(start_idx, end_idx)
     print(f"Processing batch {i + 1}/{num_process} with batch size {end_idx-start_idx}")
 
@@ -84,6 +88,8 @@ def apply_rules(i, batch_size):
                     if rule["type"] == "link_star":
                         rule_walks = ra.get_link_star_walks(rule, walk_edges)
                         # breakpoint()
+
+                        rule_walks = ra.check_var_constraints_acyclic(rule_walks)
                     else:
                         rule_walks = ra.get_walks(rule, walk_edges, rules_type, train_data, delta=delta)
 

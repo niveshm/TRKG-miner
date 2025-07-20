@@ -34,10 +34,10 @@ class RuleLearning:
 
         if rule not in self.found_rules:
             self.found_rules.append(rule.copy())
-            back_conf, forw_conf, back_rule_support, forw_rule_support, back_body_support, forw_body_support = self.estimate_link_star_confidence(rule)
+            back_conf, forw_conf, back_rule_support, forw_rule_support, back_body_support, forw_body_support = self.estimate_link_star_confidence_v2(rule)
             rule['back_conf'] = back_conf
             rule['forw_conf'] = forw_conf
-            rule["conf"] = max(back_conf, forw_conf)
+            rule["conf"] = (back_conf + forw_conf)/2
             rule['back_rule_supp'] = back_rule_support
             rule['forw_rule_supp'] = forw_rule_support
             rule['back_body_supp'] = back_body_support
@@ -49,7 +49,52 @@ class RuleLearning:
                 # print(rule)
                 # print(f"Rule created: {rule}")
 
-            
+    
+    def estimate_link_star_confidence_v2(self, rule, samples=500):
+        edges = self.data.edges[rule['head_rel']]
+        b1_rel = rule['body_rels'][0]
+        b2_rel = rule['body_rels'][1]
+        b1_edges = self.data.edges[b1_rel]
+        b2_edges = self.data.edges[b2_rel]
+        edges = self.data.convert_to_np(edges)
+        b1_edges = self.data.convert_to_np(b1_edges)
+        b2_edges = self.data.convert_to_np(b2_edges)
+
+        unique_bodies_back = set()
+        unique_bodies_forw = set()
+
+        for _ in range(samples):
+            body = b1_edges[np.random.choice(b1_edges.shape[0])]
+            unique_bodies_back.add(tuple(body))
+
+            body = b2_edges[np.random.choice(b2_edges.shape[0])]
+            unique_bodies_forw.add(tuple(body))
+
+        unique_bodies_back = [list(body) for body in unique_bodies_back]
+        unique_bodies_forw = [list(body) for body in unique_bodies_forw]
+
+        back_body_support = len(unique_bodies_back)
+        forw_body_support = len(unique_bodies_forw)
+
+        back_rule_support = 0
+        forw_rule_support = 0
+        back_conf = 0
+        forw_conf = 0
+
+        if len(unique_bodies_back):
+            back_rule_support = self.link_star_rule_support(rule, unique_bodies_back, type='back')
+            if back_rule_support:
+                back_conf = back_rule_support / back_body_support
+        
+        if len(unique_bodies_forw):
+            forw_rule_support = self.link_star_rule_support(rule, unique_bodies_forw, type='forward')
+            if forw_rule_support:
+                forw_conf = forw_rule_support / forw_body_support
+
+        return back_conf, forw_conf, back_rule_support, forw_rule_support, back_body_support, forw_body_support
+
+
+
     def estimate_link_star_confidence(self, rule, samples=500):
         edges = self.data.edges[rule['head_rel']]
         b1_rel = rule['body_rels'][0]
@@ -108,6 +153,18 @@ class RuleLearning:
                 support += 1
         
         return support
+
+    def acyclic_var_constraints(self, body):
+        body_ent = [body[0].head, body[0].tail, body[1].head, body[1].tail]
+
+        constraints = []
+        for ent in set(body_ent):
+            cnst = [i for i, e in enumerate(body_ent) if e == ent]
+            if len(cnst) > 1:
+                constraints.append(cnst)
+        
+        return sorted(constraints)
+
 
     # def link_star_rule_sample(self, rule):
     #     head_rel = rule['head_rel']
@@ -234,19 +291,22 @@ class RuleLearning:
         # print(len(bodies), body_support)
 
         if body_support:
-            rule_support = self.rule_support(unique_bodies, rule)
+            rule_support = self.rule_support(unique_bodies, rule, rule_type=rule_type)
             confidence = rule_support / body_support
             return confidence, rule_support, body_support
     
 
         return 0, 0, 0
 
-    def rule_support(self, unique_bodies, rule):
+    def rule_support(self, unique_bodies, rule, rule_type='cyclic'):
         support = 0
         head_rel = rule['head_rel']
         for body in unique_bodies:
             edges = self.data.get_edges_in_rel(body[0], head_rel, body[-1])
-            edges = [edge for edge in edges if edge.time > body[-2]]
+            if rule_type == 'cyclic':
+                edges = [edge for edge in edges if edge.time > body[-2]]
+            elif rule_type == 'relaxed_cyclic':
+                edges = [edge for edge in edges if edge.time > (body[-2] - timedelta(days=self.delta))]
             if len(edges) > 0:
                 support += 1
         return support
