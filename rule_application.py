@@ -49,7 +49,7 @@ def filter_rules(rules_dict, min_conf, min_body_supp, rule_lengths):
     return new_rules_dict
 
 # Have to change this functionality
-def get_window_edges(all_data, test_query_ts, learn_edges, window=-1):
+def get_window_edges(train_data, valid_data, test_data, test_query_ts, window=-1):
     """
     Get the edges in the data (for rule application) that occur in the specified time window.
     If window is 0, all edges before the test query timestamp are included.
@@ -66,6 +66,7 @@ def get_window_edges(all_data, test_query_ts, learn_edges, window=-1):
     Returns:
         window_edges (dict): edges in the window for rule application
     """
+    all_data = np.vstack((train_data.all_edges, valid_data.all_edges, test_data.all_edges))
 
     if window > 0:
         mask = (all_data[:, 3] < test_query_ts) * (
@@ -76,7 +77,7 @@ def get_window_edges(all_data, test_query_ts, learn_edges, window=-1):
         mask = all_data[:, 3] < test_query_ts
         window_edges = store_edges(all_data[mask])
     elif window == -1:
-        window_edges = learn_edges
+        window_edges = train_data.edges
 
     return window_edges
 
@@ -266,7 +267,7 @@ def get_link_star_walks(rule, walk_edges):
 
 
 
-def get_walks(rule, walk_edges, rules_type="cyclic", data:Graph=None, delta=0):
+def get_walks(rule, walk_edges, rules_type="cyclic", id2ts=None, delta=0):
     """
     Get walks for a given rule. Take the time constraints into account.
     Memory-efficient implementation.
@@ -287,7 +288,7 @@ def get_walks(rule, walk_edges, rules_type="cyclic", data:Graph=None, delta=0):
     )  # Change type if necessary for better memory efficiency
     if rules_type == "relaxed_cyclic":
         df["timestamp_tmp_0"] = df["timestamp_0"]
-        df["timestamp_"+ str(0)] = df["timestamp_" + str(0)].map(data.id2ts)
+        df["timestamp_"+ str(0)] = df["timestamp_" + str(0)].map(id2ts)
         df["timestamp_" + str(0)] = pd.to_datetime(df["timestamp_" + str(0)])
     if not rule["var_constraints"]:
         del df["entity_" + str(0)]
@@ -301,7 +302,7 @@ def get_walks(rule, walk_edges, rules_type="cyclic", data:Graph=None, delta=0):
             dtype=np.uint16,
         )  # Change type if necessary
         if rules_type == "relaxed_cyclic":
-            df["timestamp_" + str(i)] = df["timestamp_" + str(i)].map(data.id2ts)
+            df["timestamp_" + str(i)] = df["timestamp_" + str(i)].map(id2ts)
             df["timestamp_" + str(i)] = pd.to_datetime(df["timestamp_" + str(i)])
 
         df_edges.append(df)

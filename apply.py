@@ -32,11 +32,7 @@ test_data = Graph(dataset, 'test', True)
 valid_data = Graph(dataset, 'valid', True)
 train_data = Graph(dataset, 'train', True)
 
-all_edges = np.vstack((train_data.all_edges, valid_data.all_edges, test_data.all_edges))
-
-del test_data
-del valid_data
-del train_data
+# all_edges = np.vstack((train_data.all_edges, valid_data.all_edges, test_data.all_edges))
 
 print("Rule stats before filtering:")
 rule_stats(rules_dict)
@@ -75,7 +71,7 @@ def apply_rules(i, batch_size):
 
         if query[3] != curr_ts:
             curr_ts = query[3]
-            edges = ra.get_window_edges(all_edges, curr_ts, train_data.edges, window)
+            edges = ra.get_window_edges(train_data, valid_data, test_data, curr_ts, window)
         
         if query[1] in rules_dict:
             rules = rules_dict[query[1]]
@@ -95,7 +91,7 @@ def apply_rules(i, batch_size):
 
                         rule_walks = ra.check_var_constraints_acyclic(rule_walks)
                     else:
-                        rule_walks = ra.get_walks(rule, walk_edges, rules_type, train_data, delta=delta)
+                        rule_walks = ra.get_walks(rule, walk_edges, rules_type, train_data.id2ts, delta=delta)
 
                         if rule["var_constraints"]:
                             rule_walks = ra.check_var_constraints(
