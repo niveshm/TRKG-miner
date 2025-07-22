@@ -429,7 +429,7 @@ class RuleLearning:
         if rule['type'] == 'link_star':
             verbalized_rule = f"{rule['back_conf']:.4f} {rule['back_rule_supp']} {rule['back_body_supp']} {rule['forw_conf']} {rule['forw_rule_supp']} {rule['forw_body_supp']} : "
         else:
-            verbalized_rule = f"{rule["conf"]:.4f} {rule['rule_supp']} {rule['body_supp']} : "
+            verbalized_rule = f"{rule['conf']:.4f} {rule['rule_supp']} {rule['body_supp']} : "
 
         # verbalized_rule += f"{self.data.get_id_relation(head_rel)} => "
         if rule['type'] == 'link_star':

@@ -34,6 +34,10 @@ train_data = Graph(dataset, 'train', True)
 
 all_edges = np.vstack((train_data.all_edges, valid_data.all_edges, test_data.all_edges))
 
+del test_data
+del valid_data
+del train_data
+
 print("Rule stats before filtering:")
 rule_stats(rules_dict)
 
