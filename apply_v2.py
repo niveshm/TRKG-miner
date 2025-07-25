@@ -175,7 +175,7 @@ for i in range(num_process):
     no_cands_counter += output[i][1]
 
 
-print(f"Number of queries with no candidates: {no_cands_counter} out of {len(test_data.all_edges)}")
+print(f"Number of queries with no candidates: {no_cands_counter} out of {len(test_data)}")
 
 for s in range(len(args)):
     score_func_str = score_func.__name__ + str(args[s])
