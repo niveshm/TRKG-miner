@@ -48,6 +48,37 @@ def filter_rules(rules_dict, min_conf, min_body_supp, rule_lengths):
 
     return new_rules_dict
 
+def get_window_edges_v2(all_data, test_query_ts, learn_edges, window=-1):
+    """
+    Get the edges in the data (for rule application) that occur in the specified time window.
+    If window is 0, all edges before the test query timestamp are included.
+    If window is -1, the edges on which the rules are learned are used.
+    If window is an integer n > 0, all edges within n timestamps before the test query
+    timestamp are included.
+
+    Parameters:
+        all_data (np.ndarray): complete dataset (train/valid/test)
+        test_query_ts (np.ndarray): test query timestamp
+        learn_edges (dict): edges on which the rules are learned
+        window (int): time window used for rule application
+
+    Returns:
+        window_edges (dict): edges in the window for rule application
+    """
+
+    if window > 0:
+        mask = (all_data[:, 3] < test_query_ts) & (
+            all_data[:, 3] >= test_query_ts - window
+        )
+        window_edges = store_edges(all_data[mask])
+    elif window == 0:
+        mask = all_data[:, 3] < test_query_ts
+        window_edges = store_edges(all_data[mask])
+    elif window == -1:
+        window_edges = learn_edges
+
+    return window_edges
+
 # Have to change this functionality
 def get_window_edges(train_data, valid_data, test_data, test_query_ts, window=-1):
     """
@@ -224,6 +255,38 @@ def match_body_relations_complete(rule, edges, test_query_sub):
 
     return walk_edges
 
+def get_link_star_walks_v2(rule, walk_edges):
+    rule_walk = pd.DataFrame(
+        walk_edges[0],
+        columns=["entity_" + str(0), "entity_" + str(1), "timestamp_" + str(0)],
+        dtype=np.uint16,
+    )
+
+    for i in range(1, len(walk_edges)):
+        tmp_df = pd.DataFrame(
+            walk_edges[i],
+            columns=["entity_" + str(i), "entity_" + str(i + 1), "timestamp_" + str(i)],
+            dtype=np.uint16,
+        )
+
+        rule_walk = pd.merge(rule_walk, tmp_df, on=["entity_" + str(i)])
+
+        if i == 1:
+            rule_walk = rule_walk[
+                rule_walk["timestamp_" + str(i - 1)] < rule_walk["timestamp_" + str(i)]
+            ]
+        else:
+            rule_walk = rule_walk[
+                rule_walk["timestamp_" + str(i - 1)] > rule_walk["timestamp_" + str(i)]
+            ]
+        
+        del tmp_df
+    
+    # del rule_walk["entity_" + str(0)]
+    # del rule_walk["entity_" + str(len(walk_edges) - 1)]
+
+    return rule_walk
+
 
 ## Need improvement
 def get_link_star_walks(rule, walk_edges):
@@ -262,10 +325,47 @@ def get_link_star_walks(rule, walk_edges):
         df_edges[i] = df_edges[i][0:0]
     
     
+    
     return rule_walks
 
 
+def get_walks_v2(rule, walk_edges, rules_type="cyclic", id2ts=None, delta=0):
+    rule_walks = pd.DataFrame(
+        walk_edges[0],
+        columns=["entity_" + str(0), "entity_" + str(1), "timestamp_" + str(0)],
+        dtype=np.uint16,
+    )
+    if not rule["var_constraints"]:
+        del rule_walks["entity_" + str(0)]
+    
+    for i in range(1, len(walk_edges)):
+        tmp_df = pd.DataFrame(
+            walk_edges[i],
+            columns=["entity_" + str(i), "entity_" + str(i + 1), "timestamp_" + str(i)],
+            dtype=np.uint16,
+        )
 
+        rule_walks = pd.merge(rule_walks, tmp_df, on=["entity_" + str(i)])
+
+        if rules_type == "cyclic":
+            # print(",", end="")
+            rule_walks = rule_walks[
+                rule_walks["timestamp_" + str(i - 1)] <= rule_walks["timestamp_" + str(i)]
+            ]
+        elif rules_type == "relaxed_cyclic":
+            rule_walks = rule_walks[
+                (rule_walks["timestamp_" + str(i - 1)]-delta) <= rule_walks["timestamp_" + str(i)]
+            ]
+
+        if not rule["var_constraints"]:
+            del rule_walks["entity_" + str(i)]
+        
+        del tmp_df
+    
+    for i in range(1, len(rule["body_rels"])):
+        del rule_walks["timestamp_" + str(i)]
+
+    return rule_walks
 
 def get_walks(rule, walk_edges, rules_type="cyclic", id2ts=None, delta=0):
     """
