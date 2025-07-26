@@ -19,7 +19,7 @@ rule_file_path = f'{dir_path}{rule_file_name}'
 rule_lengths = [1,2,3]
 top_k = 20
 window = 0
-num_process = 1
+num_process = 8
 rules_type = 'relaxed_cyclic'
 delta = 1
 
@@ -98,6 +98,13 @@ def apply_rules(i, batch_size):
                         )
                 
                 if not rule_walks.empty:
+                    if rule["type"] == "link_star":
+                        max_entity = "entity_" + str(2)
+                    else:
+                        max_entity = "entity_" + str(len(rule["body_rels"]))
+                    
+                    rule_walks = rule_walks[["timestamp_0", max_entity]]
+
                     cands_dict = ra.get_candidates(
                         rule,
                         rule_walks,
@@ -107,6 +114,7 @@ def apply_rules(i, batch_size):
                         args,
                         dicts_idx,
                     )
+                    del rule_walks
                 
                     for s in dicts_idx:
                         cands_dict[s] = {
@@ -175,7 +183,7 @@ def apply_rules(i, batch_size):
                 #             break
 
                     # Explicit cleanup of rule_walks DataFrame
-                del rule_walks
+                
                     
             if cands_dict[0]:
                 for s in range(len(args)):
