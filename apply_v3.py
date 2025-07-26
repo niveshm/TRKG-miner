@@ -19,7 +19,7 @@ rule_file_path = f'{dir_path}{rule_file_name}'
 rule_lengths = [1,2,3]
 top_k = 20
 window = 0
-num_process = 8
+num_process = 1
 rules_type = 'relaxed_cyclic'
 delta = 1
 
@@ -81,57 +81,101 @@ def apply_rules(i, batch_size):
 
             for rule in rules:
                 if rule["type"] == "link_star":
-                    walk_edges = ra.match_link_star_body_relations(rule, edges, query[0])
-                
-                else:
-                    walk_edges = ra.match_body_relations(rule, edges, query[0])
-                
-                if 0 not in [len(walk) for walk in walk_edges]:
-                    if rule["type"] == "link_star":
-                        rule_walks = ra.get_link_star_walks_v2(rule, walk_edges)
-                        
-                        rule_walks = ra.check_var_constraints_acyclic(rule_walks)
-                    else:
-                        rule_walks = ra.get_walks_v2(rule, walk_edges, rules_type, delta=delta)
-                        if rule["var_constraints"]:
-                            rule_walks = ra.check_var_constraints(
-                                rule["var_constraints"], rule_walks
-                            )
-                    
-                    if not rule_walks.empty:
-                        cands_dict = ra.get_candidates(
-                            rule,
-                            rule_walks,
-                            curr_ts,
-                            cands_dict,
-                            score_func,
-                            args,
-                            dicts_idx,
-                        )
-                    
-                        for s in dicts_idx:
-                            cands_dict[s] = {
-                                x: sorted(cands_dict[s][x], reverse=True) for x in cands_dict[s].keys()
-                            }
-                            cands_dict[s] = dict(
-                                sorted(
-                                    cands_dict[s].items(),
-                                    key=lambda item: item[1],
-                                    reverse=True,
-                                )
-                            )
-                            top_k_scores = [v for _, v in cands_dict[s].items()][:top_k]
-                            unique_scores = list(
-                                scores for scores, _ in itertools.groupby(top_k_scores)
-                            )
-                            if len(unique_scores) >= top_k:
-                                dicts_idx.remove(s)
+                    # walk_edges = ra.match_link_star_body_relations(rule, edges, query[0])
+                    rule_walks = ra.match_and_get_link_star_walks(rule, edges, query[0])
 
-                        if not dicts_idx:
-                            break
+                    # breakpoint()
+                    if not rule_walks.empty:
+                        rule_walks = ra.check_var_constraints_acyclic(rule_walks)
+                else:
+                    # walk_edges = ra.match_body_relations(rule, edges, query[0])
+                    rule_walks = ra.match_and_get_walks_combined(rule, edges, query[0], rules_type, delta=delta)
+
+                    # breakpoint()
+                    if not rule_walks.empty and rule["var_constraints"]:
+                        rule_walks = ra.check_var_constraints(
+                            rule["var_constraints"], rule_walks
+                        )
+                
+                if not rule_walks.empty:
+                    cands_dict = ra.get_candidates(
+                        rule,
+                        rule_walks,
+                        curr_ts,
+                        cands_dict,
+                        score_func,
+                        args,
+                        dicts_idx,
+                    )
+                
+                    for s in dicts_idx:
+                        cands_dict[s] = {
+                            x: sorted(cands_dict[s][x], reverse=True) for x in cands_dict[s].keys()
+                        }
+                        cands_dict[s] = dict(
+                            sorted(
+                                cands_dict[s].items(),
+                                key=lambda item: item[1],
+                                reverse=True,
+                            )
+                        )
+                        top_k_scores = [v for _, v in cands_dict[s].items()][:top_k]
+                        unique_scores = list(
+                            scores for scores, _ in itertools.groupby(top_k_scores)
+                        )
+                        if len(unique_scores) >= top_k:
+                            dicts_idx.remove(s)
+
+                    if not dicts_idx:
+                        break
+                
+                # if 0 not in [len(walk) for walk in walk_edges]:
+                #     if rule["type"] == "link_star":
+                #         rule_walks = ra.get_link_star_walks_v2(rule, walk_edges)
+                        
+                #         rule_walks = ra.check_var_constraints_acyclic(rule_walks)
+                #     else:
+                #         rule_walks = ra.get_walks_v2(rule, walk_edges, rules_type, data.id2ts, delta=delta)
+
+                #         if rule["var_constraints"]:
+                #             rule_walks = ra.check_var_constraints(
+                #                 rule["var_constraints"], rule_walks
+                #             )
+                    
+                #     if not rule_walks.empty:
+                #         cands_dict = ra.get_candidates(
+                #             rule,
+                #             rule_walks,
+                #             curr_ts,
+                #             cands_dict,
+                #             score_func,
+                #             args,
+                #             dicts_idx,
+                #         )
+                    
+                #         for s in dicts_idx:
+                #             cands_dict[s] = {
+                #                 x: sorted(cands_dict[s][x], reverse=True) for x in cands_dict[s].keys()
+                #             }
+                #             cands_dict[s] = dict(
+                #                 sorted(
+                #                     cands_dict[s].items(),
+                #                     key=lambda item: item[1],
+                #                     reverse=True,
+                #                 )
+                #             )
+                #             top_k_scores = [v for _, v in cands_dict[s].items()][:top_k]
+                #             unique_scores = list(
+                #                 scores for scores, _ in itertools.groupby(top_k_scores)
+                #             )
+                #             if len(unique_scores) >= top_k:
+                #                 dicts_idx.remove(s)
+
+                #         if not dicts_idx:
+                #             break
 
                     # Explicit cleanup of rule_walks DataFrame
-                    del rule_walks
+                del rule_walks
                     
             if cands_dict[0]:
                 for s in range(len(args)):
@@ -146,6 +190,7 @@ def apply_rules(i, batch_size):
                     noisy_or_cands = dict(
                         sorted(cands_scores.items(), key=lambda x: x[1], reverse=True)
                     )
+                    # breakpoint()
                     all_candidates[s][ind] = noisy_or_cands
             else:  # No candidates found by applying rules
                 no_cands_counter += 1

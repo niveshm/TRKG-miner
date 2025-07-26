@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 import pickle as pkl
 
-from data import Graph
+from grapher import Grapher, store_edges
 
 
 
@@ -112,18 +112,18 @@ def get_window_edges(train_data, valid_data, test_data, test_query_ts, window=-1
 
     return window_edges
 
-def store_edges(edges):
-    edges_dict = dict()
-    for i in range(len(edges)):
-        rel = edges[i][1]
-        if rel not in edges_dict:
-            edges_dict[rel] = []
-        edges_dict[rel].append(edges[i])
+# def store_edges(edges):
+#     edges_dict = dict()
+#     for i in range(len(edges)):
+#         rel = edges[i][1]
+#         if rel not in edges_dict:
+#             edges_dict[rel] = []
+#         edges_dict[rel].append(edges[i])
     
-    for rel in edges_dict:
-        edges_dict[rel] = np.array(edges_dict[rel])
+#     for rel in edges_dict:
+#         edges_dict[rel] = np.array(edges_dict[rel])
     
-    return edges_dict
+#     return edges_dict
 
 def match_link_star_body_relations(rule, edges, test_query_sub):
 
@@ -329,7 +329,7 @@ def get_link_star_walks(rule, walk_edges):
     return rule_walks
 
 
-def get_walks_v2(rule, walk_edges, rules_type="cyclic", id2ts=None, delta=0):
+def get_walks_v2(rule, walk_edges, rules_type="cyclic", delta=0):
     rule_walks = pd.DataFrame(
         walk_edges[0],
         columns=["entity_" + str(0), "entity_" + str(1), "timestamp_" + str(0)],
@@ -594,3 +594,264 @@ def verbalize_walk(walk, data):
         walk_str += data.id2ts[walk[3 * j + 3]] + "\t"
 
     return walk_str[:-1]
+
+# def match_and_get_walks_v(rule, edges, test_query_sub, rules_type="cyclic", delta=0):
+#     rels = rule["body_rels"]
+
+#     if not rels:
+#         return pd.DataFrame()
+    
+#     try:
+#         rel_edges = edges[rels[0]]
+#         mask = rel_edges[:, 0] == test_query_sub
+#         first_edges = rel_edges[mask]
+
+#         if len(first_edges) == 0:
+#             return pd.DataFrame()
+        
+#         rule_walks = pd.DataFrame(
+#             np.hstack((first_edges[:, 0:1], first_edges[:, 2:4])),  # [sub, obj, ts]
+#             columns=["entity_0", "entity_1", "timestamp_0"],
+#             dtype=np.uint16,
+#         )
+
+#         if not rule["var_constraints"]:
+#             del rule_walks["entity_" + str(0)]
+        
+#         del first_edges
+#         rel_edges = None
+        
+#     except KeyError:
+#         return pd.DataFrame()
+    
+#     for i in range(1, len(rels)):
+        
+
+def match_and_get_link_star_walks(rule, edges, test_query_sub):
+    rels = rule["body_rels"]
+
+    if not rels:
+        return pd.DataFrame()
+    
+    try:
+        rel_edges = edges[rule["head_rel"]]
+        mask = rel_edges[:, 0] == test_query_sub
+        head_edges = rel_edges[mask]
+
+        if len(head_edges) == 0:
+            return pd.DataFrame()
+        
+        rule_walks = pd.DataFrame(
+            np.hstack((head_edges[:, 0:1], head_edges[:, 2:4])),  # [sub, obj, ts]
+            columns=["entity_1", "entity_2", "timestamp_1"],
+            dtype=np.uint16,
+        )
+
+        del head_edges
+        rel_edges = None
+    
+    except KeyError:
+        return pd.DataFrame()
+
+    try:
+        if rule_walks.empty:
+            return pd.DataFrame()
+
+        body_edges_1 = edges[rels[0]]
+        mask = body_edges_1[:, 2] == test_query_sub
+        new_edges_1 = body_edges_1[mask]
+
+        next_df = pd.DataFrame(
+            np.hstack((new_edges_1[:, 0:1], new_edges_1[:, 2:4])),  # [sub, obj, ts]
+            columns=["entity_0", "entity_1", "timestamp_0"],
+            dtype=np.uint16,
+        )
+
+        rule_walks = pd.merge(rule_walks, next_df, on=["entity_1"], how='inner')
+        del next_df
+        del new_edges_1
+        del body_edges_1
+
+        if rule_walks.empty:
+            return pd.DataFrame()
+        
+        rule_walks = rule_walks[
+            rule_walks["timestamp_0"] < rule_walks["timestamp_1"]
+        ]
+        
+        if rule_walks.empty:
+            return pd.DataFrame()
+            
+        entity_col = f"entity_{2}"
+        if entity_col not in rule_walks.columns:
+            return pd.DataFrame()
+        
+        cur_targets = np.array(list(set(rule_walks[entity_col])))
+        rel_edges = edges[rels[1]]
+        mask = np.any(rel_edges[:, 0] == cur_targets[:, None], axis=0)
+        new_edges_2 = rel_edges[mask]
+        if len(new_edges_2) == 0:
+            return pd.DataFrame()
+        
+        next_df = pd.DataFrame(
+            np.hstack((new_edges_2[:, 0:1], new_edges_2[:, 2:4])),  # [sub, obj, ts]
+            columns=["entity_2", "entity_3", "timestamp_2"],
+            dtype=np.uint16,
+        )
+        rule_walks = pd.merge(rule_walks, next_df, on=["entity_2"], how='inner')
+        del next_df
+        del new_edges_2
+        del rel_edges
+        if rule_walks.empty:
+            return pd.DataFrame()
+    
+        rule_walks = rule_walks[
+            rule_walks["timestamp_1"] > rule_walks["timestamp_2"]
+        ]
+
+    except KeyError:
+        return pd.DataFrame()
+    
+    return rule_walks
+
+
+
+def match_and_get_walks_combined(rule, edges, test_query_sub, rules_type="cyclic", delta=0):
+    """
+    Combined function that matches body relations and builds walks directly.
+    This eliminates the intermediate walk_edges arrays and is more memory efficient.
+    
+    Parameters:
+        rule (dict): rule from rules_dict
+        edges (dict): edges for rule application
+        test_query_sub (int): test query subject
+        rules_type (str): type of rules ("cyclic" or "relaxed_cyclic")
+        id2ts (dict): mapping from timestamp ID to actual timestamp (for relaxed_cyclic)
+        delta (int): time delta for relaxed_cyclic rules
+        
+    Returns:
+        rule_walks (pd.DataFrame): final walks matching the rule with time constraints applied
+    """
+    rels = rule["body_rels"]
+    
+    # Early return if no relations
+    if not rels:
+        return pd.DataFrame()
+    
+    # Step 1: Get first relation edges matching query subject
+    try:
+        rel_edges = edges[rels[0]]
+        mask = rel_edges[:, 0] == test_query_sub
+        first_edges = rel_edges[mask]
+        # breakpoint()
+        
+        if len(first_edges) == 0:
+            return pd.DataFrame()
+            
+        # Create initial DataFrame
+        rule_walks = pd.DataFrame(
+            np.hstack((first_edges[:, 0:1], first_edges[:, 2:4])),  # [sub, obj, ts]
+            columns=["entity_0", "entity_1", "timestamp_0"],
+            dtype=np.uint16,
+        )
+        
+        # # Handle timestamp processing for relaxed_cyclic
+        # if rules_type == "relaxed_cyclic":
+        #     rule_walks["timestamp_tmp_0"] = rule_walks["timestamp_0"]
+        #     rule_walks["timestamp_0"] = rule_walks["timestamp_0"].map(id2ts)
+        #     rule_walks["timestamp_0"] = pd.to_datetime(rule_walks["timestamp_0"])
+        
+        # Remove entity_0 if no var_constraints
+        if not rule["var_constraints"]:
+            rule_walks = rule_walks.drop(columns=["entity_0"])
+        
+        del first_edges
+        rel_edges = None
+            
+    except KeyError:
+        return pd.DataFrame()
+    
+    # Step 2: Iteratively build walks for remaining relations
+    for i in range(1, len(rels)):
+        if rule_walks.empty:
+            return pd.DataFrame()
+            
+        # Get current targets from previous step
+        entity_col = f"entity_{i}"
+        if entity_col not in rule_walks.columns:
+            return pd.DataFrame()
+            
+        cur_targets = np.array(list(set(rule_walks[entity_col])))
+        
+        try:
+            # Get edges for next relation
+            rel_edges = edges[rels[i]]
+            mask = np.any(rel_edges[:, 0] == cur_targets[:, None], axis=0)
+            next_edges = rel_edges[mask]
+            
+            if len(next_edges) == 0:
+                return pd.DataFrame()
+            
+            # Create DataFrame for next step
+            next_df = pd.DataFrame(
+                np.hstack((next_edges[:, 0:1], next_edges[:, 2:4])),  # [sub, obj, ts]
+                columns=[f"entity_{i}", f"entity_{i+1}", f"timestamp_{i}"],
+                dtype=np.uint16,
+            )
+            
+            # Handle timestamp processing for relaxed_cyclic
+            # if rules_type == "relaxed_cyclic":
+            #     next_df[f"timestamp_{i}"] = next_df[f"timestamp_{i}"].map(id2ts)
+            #     next_df[f"timestamp_{i}"] = pd.to_datetime(next_df[f"timestamp_{i}"])
+            
+            # Merge with existing walks
+            rule_walks = pd.merge(rule_walks, next_df, on=[f"entity_{i}"], how='inner')
+            del next_df
+            del next_edges
+            del rel_edges
+            
+            # Apply time constraints
+            if rules_type == "cyclic":
+                rule_walks = rule_walks[
+                    rule_walks[f"timestamp_{i-1}"] <= rule_walks[f"timestamp_{i}"]
+                ]
+            elif rules_type == "relaxed_cyclic":
+                rule_walks = rule_walks[
+                    (rule_walks[f"timestamp_{i-1}"] - delta) <= rule_walks[f"timestamp_{i}"]
+                ]
+            
+            # Remove intermediate entity column if no var_constraints
+            if not rule["var_constraints"]:
+                rule_walks = rule_walks.drop(columns=[f"entity_{i}"])
+            
+            # Early exit if no walks remain after time filtering
+            if rule_walks.empty:
+                return pd.DataFrame()
+                
+        except KeyError:
+            return pd.DataFrame()
+    
+    # Step 3: Final cleanup
+    if not rule_walks.empty:
+        # Remove intermediate timestamp columns
+        timestamp_cols_to_drop = [f"timestamp_{i}" for i in range(1, len(rels))]
+        rule_walks = rule_walks.drop(columns=[col for col in timestamp_cols_to_drop if col in rule_walks.columns])
+        
+        # Handle relaxed_cyclic timestamp restoration
+        if rules_type == "relaxed_cyclic" and "timestamp_tmp_0" in rule_walks.columns:
+            rule_walks["timestamp_0"] = rule_walks["timestamp_tmp_0"]
+            rule_walks = rule_walks.drop(columns=["timestamp_tmp_0"])
+    
+    return rule_walks
+
+
+if __name__ == "__main__":
+    rule = {'type': 'relaxed_cyclic', 'head_rel': 160, 'body_rels': [385, 372, 160], 'var_constraints': [[0, 2]], 'conf': 1.0, 'rule_supp': 209, 'body_supp': 209}
+    dataset = 'icews14'
+    data = Grapher(dataset)
+    learn_edges = store_edges(data.train_idx)
+    query = np.array([  13,  160, 1434,  314])
+
+    edges = get_window_edges_v2(data.all_idx, query[3], learn_edges, window=0)
+    walks = match_and_get_walks_combined(rule, edges, query[0], rules_type=rule["type"], delta=0)
+    print(walks)
