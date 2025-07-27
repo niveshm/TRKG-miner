@@ -2,8 +2,137 @@ import json
 import numpy as np
 import pandas as pd
 import pickle as pkl
+import sys
 
 from grapher import Grapher, store_edges
+
+
+# def get_dataframe_memory_gb(df):
+#     """Get DataFrame memory usage in GB"""
+#     if df.empty:
+#         return 0.0
+#     return df.memory_usage(deep=True).sum() / (1024**3)
+
+# def should_skip_large_dataframe(df, threshold_gb=8.0):
+#     """Check if DataFrame exceeds memory threshold"""
+#     memory_gb = get_dataframe_memory_gb(df)
+#     return memory_gb > threshold_gb
+
+# def estimate_merge_memory_gb(df_1, df_2, df_col):
+#     item_1 = set(df_1[df_col].unique())
+#     item_2 = set(df_2[df_col].unique())
+#     item = item_1 & item_2
+#     n = df_1[df_col].isin(item).sum()
+#     m = df_2[df_col].isin(item).sum()
+#     k_1 = df_1.shape[1]
+#     k_2 = df_2.shape[1]
+
+#     output_rows = n * m
+#     output_cols =  (k_1 + k_2) - 1
+#     bytes_per_value = 26  # int32
+
+#     total_bytes = output_rows * output_cols * bytes_per_value
+#     total_gb = total_bytes / (1024**3)
+    
+#     return total_gb
+
+def estimate_merge_memory_gb(df_1, df_2, df_col):
+    """
+    Estimate memory usage of a pandas merge operation more accurately.
+    
+    Parameters:
+        df_1 (pd.DataFrame): First DataFrame
+        df_2 (pd.DataFrame): Second DataFrame  
+        df_col (str): Column name to merge on
+        
+    Returns:
+        float: Estimated memory usage in GB
+    """
+    if df_1.empty or df_2.empty:
+        return 0.0
+    
+    # Get unique values in merge column for both DataFrames
+    unique_1 = set(df_1[df_col].unique())
+    unique_2 = set(df_2[df_col].unique())
+    
+    # Find common keys (only these will produce results)
+    common_keys = unique_1 & unique_2
+    
+    if not common_keys:
+        return 0.0  # No matching keys = empty result
+    
+    # Calculate actual merge result size more accurately
+    total_output_rows = 0
+    
+    for key in common_keys:
+        # Count rows in each DataFrame for this key
+        count_1 = (df_1[df_col] == key).sum()
+        count_2 = (df_2[df_col] == key).sum()
+        
+        # For each key, result size is count_1 * count_2
+        total_output_rows += count_1 * count_2
+        
+        # Early termination if getting too large
+        if total_output_rows > 10_000_000:  # 10M rows
+            break
+    
+    # Calculate memory usage
+    output_cols = df_1.shape[1] + df_2.shape[1] - 1  # -1 for merge column
+    bytes_per_value = 2  # uint16 = 2 bytes
+    
+    total_bytes = total_output_rows * output_cols * bytes_per_value
+    total_gb = total_bytes / (1024**3)
+    
+    return total_gb
+
+
+def estimate_merge_memory_gb_fast(df_1, df_2, df_col):
+    """
+    Fast approximation of merge memory usage using sampling.
+    Use this for very large DataFrames where the accurate method is too slow.
+    """
+    if df_1.empty or df_2.empty:
+        return 0.0
+    
+    # Sample-based estimation for large DataFrames
+    if len(df_1) > 50000 or len(df_2) > 50000:
+        # Sample 1000 rows from each DataFrame
+        sample_size = min(1000, len(df_1), len(df_2))
+        df_1_sample = df_1.sample(n=sample_size)
+        df_2_sample = df_2.sample(n=sample_size)
+        
+        # Get average duplicates per key in samples
+        avg_dup_1 = len(df_1_sample) / len(df_1_sample[df_col].unique()) if not df_1_sample.empty else 1
+        avg_dup_2 = len(df_2_sample) / len(df_2_sample[df_col].unique()) if not df_2_sample.empty else 1
+        
+        # Estimate overlap
+        unique_1 = set(df_1[df_col].unique())
+        unique_2 = set(df_2[df_col].unique())
+        common_keys = len(unique_1 & unique_2)
+        
+        if common_keys == 0:
+            return 0.0
+        
+        # Rough estimation
+        estimated_output_rows = common_keys * avg_dup_1 * avg_dup_2
+        
+    else:
+        # Use accurate method for smaller DataFrames
+        return estimate_merge_memory_gb(df_1, df_2, df_col)
+    
+    # Calculate memory
+    output_cols = df_1.shape[1] + df_2.shape[1] - 1
+    bytes_per_value = 2  # uint16
+    
+    total_bytes = estimated_output_rows * output_cols * bytes_per_value
+    total_gb = total_bytes / (1024**3)
+    
+    return total_gb
+
+# Example:
+# memory_gb = estimate_merge_memory_gb(100000, 50000, 5, avg_matches_per_row=10)
+# print(f"Estimated memory: {memory_gb:.4f} GB")
+# # Output: Estimated memory: 0.0084 GB
 
 
 
@@ -630,7 +759,7 @@ def match_and_get_link_star_walks_v2(rule, edges, test_query_sub):
     rels = rule["body_rels"]
 
     if not rels:
-        return pd.DataFrame()
+        return pd.DataFrame(), False
     
     try:
         rel_edges = edges[rule["head_rel"]]
@@ -638,7 +767,7 @@ def match_and_get_link_star_walks_v2(rule, edges, test_query_sub):
         head_edges = rel_edges[mask]
 
         if len(head_edges) == 0:
-            return pd.DataFrame()
+            return pd.DataFrame(), False
         
         rule_walks = pd.DataFrame(
             np.hstack((head_edges[:, 0:1], head_edges[:, 2:4])),  # [sub, obj, ts]
@@ -650,11 +779,11 @@ def match_and_get_link_star_walks_v2(rule, edges, test_query_sub):
         rel_edges = None
     
     except KeyError:
-        return pd.DataFrame()
+        return pd.DataFrame(), False
 
     try:
         if rule_walks.empty:
-            return pd.DataFrame()
+            return pd.DataFrame(), False
 
         body_edges_1 = edges[rels[0]]
         mask = body_edges_1[:, 2] == test_query_sub
@@ -665,14 +794,18 @@ def match_and_get_link_star_walks_v2(rule, edges, test_query_sub):
             columns=["entity_0", "entity_1", "timestamp_0"],
             dtype=np.uint16,
         )
-        
+
+        est_size = estimate_merge_memory_gb_fast(rule_walks, next_df, "entity_1")
+        if est_size >= 10:
+            return pd.DataFrame(), True
+
         rule_walks_tmp = pd.merge(rule_walks, next_df, on=["entity_1"], how='inner')
-        del next_df
-        del new_edges_1
-        del body_edges_1
+        next_df = next_df[0:0]
+        new_edges_1 = None
+        body_edges_1 = None
 
         if rule_walks_tmp.empty:
-            return pd.DataFrame()
+            return pd.DataFrame(), False
         
         rule_walks_tmp = rule_walks_tmp[
             rule_walks_tmp["timestamp_0"] < rule_walks_tmp["timestamp_1"]
@@ -680,16 +813,14 @@ def match_and_get_link_star_walks_v2(rule, edges, test_query_sub):
         rule_walks_tmp = rule_walks_tmp[
             rule_walks_tmp["entity_0"] != rule_walks_tmp["entity_2"]
         ]
-        # rule_walks_tmp_sp = rule_walks_tmp.shape
         
         if rule_walks_tmp.empty:
-            return pd.DataFrame()
+            return pd.DataFrame(), False
         
         
-        # breakpoint()
         entity_col = f"entity_{2}"
         if entity_col not in rule_walks_tmp.columns:
-            return pd.DataFrame()
+            return pd.DataFrame(), False
         
         cur_targets = np.array(list(set(rule_walks_tmp[entity_col])))
         del rule_walks_tmp
@@ -697,21 +828,26 @@ def match_and_get_link_star_walks_v2(rule, edges, test_query_sub):
         rel_edges = edges[rels[1]]
         mask = np.any(rel_edges[:, 0] == cur_targets[:, None], axis=0)
         new_edges_2 = rel_edges[mask]
-        # breakpoint()
         if len(new_edges_2) == 0:
-            return pd.DataFrame()
+            return pd.DataFrame(), False
         
         next_df = pd.DataFrame(
             np.hstack((new_edges_2[:, 0:1], new_edges_2[:, 2:4])),  # [sub, obj, ts]
             columns=["entity_2", "entity_3", "timestamp_0"],
             dtype=np.uint16,
         )
+        est_size = estimate_merge_memory_gb_fast(rule_walks, next_df, "entity_2")
+        
+        if est_size >= 10:
+            return pd.DataFrame(), True
+
         rule_walks = pd.merge(rule_walks, next_df, on=["entity_2"], how='inner')
-        del next_df
-        del new_edges_2
-        del rel_edges
+        # breakpoint()
+        next_df = next_df[0:0]
+        new_edges_2 = None
+        rel_edges = None
         if rule_walks.empty:
-            return pd.DataFrame()
+            return pd.DataFrame(), False
     
         rule_walks = rule_walks[
             rule_walks["timestamp_1"] > rule_walks["timestamp_0"]
@@ -722,9 +858,9 @@ def match_and_get_link_star_walks_v2(rule, edges, test_query_sub):
         ]
 
     except KeyError:
-        return pd.DataFrame()
+        return pd.DataFrame(), False
     
-    return rule_walks
+    return rule_walks, False
 
 
 def match_and_get_link_star_walks(rule, edges, test_query_sub):
@@ -836,7 +972,7 @@ def match_and_get_walks_combined(rule, edges, test_query_sub, rules_type="cyclic
     
     # Early return if no relations
     if not rels:
-        return pd.DataFrame()
+        return pd.DataFrame(), False
     
     # Step 1: Get first relation edges matching query subject
     try:
@@ -846,7 +982,7 @@ def match_and_get_walks_combined(rule, edges, test_query_sub, rules_type="cyclic
         # breakpoint()
         
         if len(first_edges) == 0:
-            return pd.DataFrame()
+            return pd.DataFrame(), False
             
         # Create initial DataFrame
         rule_walks = pd.DataFrame(
@@ -869,17 +1005,17 @@ def match_and_get_walks_combined(rule, edges, test_query_sub, rules_type="cyclic
         rel_edges = None
             
     except KeyError:
-        return pd.DataFrame()
+        return pd.DataFrame(), False
     
     # Step 2: Iteratively build walks for remaining relations
     for i in range(1, len(rels)):
         if rule_walks.empty:
-            return pd.DataFrame()
+            return pd.DataFrame(), False
             
         # Get current targets from previous step
         entity_col = f"entity_{i}"
         if entity_col not in rule_walks.columns:
-            return pd.DataFrame()
+            return pd.DataFrame(), False
             
         cur_targets = np.array(list(set(rule_walks[entity_col])))
         
@@ -890,7 +1026,7 @@ def match_and_get_walks_combined(rule, edges, test_query_sub, rules_type="cyclic
             next_edges = rel_edges[mask]
             
             if len(next_edges) == 0:
-                return pd.DataFrame()
+                return pd.DataFrame(), False
             
             # Create DataFrame for next step
             next_df = pd.DataFrame(
@@ -905,10 +1041,14 @@ def match_and_get_walks_combined(rule, edges, test_query_sub, rules_type="cyclic
             #     next_df[f"timestamp_{i}"] = pd.to_datetime(next_df[f"timestamp_{i}"])
             
             # Merge with existing walks
+            est_size = estimate_merge_memory_gb_fast(rule_walks, next_df, f"entity_{i}")
+            if est_size >= 10:
+                return pd.DataFrame(), True
+
             rule_walks = pd.merge(rule_walks, next_df, on=[f"entity_{i}"], how='inner')
-            del next_df
-            del next_edges
-            del rel_edges
+            next_df = next_df[0:0]
+            next_edges = None
+            rel_edges = None
             
             # Apply time constraints
             if rules_type == "cyclic":
@@ -926,11 +1066,11 @@ def match_and_get_walks_combined(rule, edges, test_query_sub, rules_type="cyclic
             
             # Early exit if no walks remain after time filtering
             if rule_walks.empty:
-                return pd.DataFrame()
+                return pd.DataFrame(), False
                 
         except KeyError:
-            return pd.DataFrame()
-    
+            return pd.DataFrame(), False
+
     # Step 3: Final cleanup
     if not rule_walks.empty:
         # Remove intermediate timestamp columns
@@ -942,7 +1082,7 @@ def match_and_get_walks_combined(rule, edges, test_query_sub, rules_type="cyclic
             rule_walks["timestamp_0"] = rule_walks["timestamp_tmp_0"]
             rule_walks = rule_walks.drop(columns=["timestamp_tmp_0"])
     
-    return rule_walks
+    return rule_walks, False
 
 
 if __name__ == "__main__":

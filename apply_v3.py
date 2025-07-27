@@ -61,9 +61,10 @@ def apply_rules(i, batch_size):
     no_cands_counter = 0
     curr_ts = -1
     edges = None  # Cache edges to avoid repeated computation
+    skip_query = False
 
     for ind in idx_range:
-        
+        skip_query = False
         query = test_data[ind] #[h, r, t, ts]
         cands_dict = [dict() for _ in range(len(args))]
 
@@ -82,15 +83,19 @@ def apply_rules(i, batch_size):
             for rule in rules:
                 if rule["type"] == "link_star":
                     # walk_edges = ra.match_link_star_body_relations(rule, edges, query[0])
-                    rule_walks = ra.match_and_get_link_star_walks_v2(rule, edges, query[0])
+                    rule_walks, skip_query = ra.match_and_get_link_star_walks_v2(rule, edges, query[0])
+
+                    if skip_query:
+                        break
 
                     # breakpoint()
                     # if not rule_walks.empty:
                     #     rule_walks = ra.check_var_constraints_acyclic(rule_walks)
                 else:
                     # walk_edges = ra.match_body_relations(rule, edges, query[0])
-                    rule_walks = ra.match_and_get_walks_combined(rule, edges, query[0], rules_type, delta=delta)
-
+                    rule_walks, skip_query = ra.match_and_get_walks_combined(rule, edges, query[0], rules_type, delta=delta)
+                    if skip_query:
+                        break
                     # breakpoint()
                     if not rule_walks.empty and rule["var_constraints"]:
                         rule_walks = ra.check_var_constraints(
@@ -184,7 +189,10 @@ def apply_rules(i, batch_size):
 
                     # Explicit cleanup of rule_walks DataFrame
                 
-                    
+            if skip_query:
+                print(f"Skipping query {ind} due to memory size.")
+                continue
+
             if cands_dict[0]:
                 for s in range(len(args)):
                     # Calculate noisy-or scores
