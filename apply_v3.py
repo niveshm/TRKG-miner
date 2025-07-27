@@ -82,11 +82,11 @@ def apply_rules(i, batch_size):
             for rule in rules:
                 if rule["type"] == "link_star":
                     # walk_edges = ra.match_link_star_body_relations(rule, edges, query[0])
-                    rule_walks = ra.match_and_get_link_star_walks(rule, edges, query[0])
+                    rule_walks = ra.match_and_get_link_star_walks_v2(rule, edges, query[0])
 
                     # breakpoint()
-                    if not rule_walks.empty:
-                        rule_walks = ra.check_var_constraints_acyclic(rule_walks)
+                    # if not rule_walks.empty:
+                    #     rule_walks = ra.check_var_constraints_acyclic(rule_walks)
                 else:
                     # walk_edges = ra.match_body_relations(rule, edges, query[0])
                     rule_walks = ra.match_and_get_walks_combined(rule, edges, query[0], rules_type, delta=delta)

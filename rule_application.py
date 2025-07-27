@@ -626,6 +626,106 @@ def verbalize_walk(walk, data):
     
 #     for i in range(1, len(rels)):
         
+def match_and_get_link_star_walks_v2(rule, edges, test_query_sub):
+    rels = rule["body_rels"]
+
+    if not rels:
+        return pd.DataFrame()
+    
+    try:
+        rel_edges = edges[rule["head_rel"]]
+        mask = rel_edges[:, 0] == test_query_sub
+        head_edges = rel_edges[mask]
+
+        if len(head_edges) == 0:
+            return pd.DataFrame()
+        
+        rule_walks = pd.DataFrame(
+            np.hstack((head_edges[:, 0:1], head_edges[:, 2:4])),  # [sub, obj, ts]
+            columns=["entity_1", "entity_2", "timestamp_1"],
+            dtype=np.uint16,
+        )
+
+        del head_edges
+        rel_edges = None
+    
+    except KeyError:
+        return pd.DataFrame()
+
+    try:
+        if rule_walks.empty:
+            return pd.DataFrame()
+
+        body_edges_1 = edges[rels[0]]
+        mask = body_edges_1[:, 2] == test_query_sub
+        new_edges_1 = body_edges_1[mask]
+
+        next_df = pd.DataFrame(
+            np.hstack((new_edges_1[:, 0:1], new_edges_1[:, 2:4])),  # [sub, obj, ts]
+            columns=["entity_0", "entity_1", "timestamp_0"],
+            dtype=np.uint16,
+        )
+        
+        rule_walks_tmp = pd.merge(rule_walks, next_df, on=["entity_1"], how='inner')
+        del next_df
+        del new_edges_1
+        del body_edges_1
+
+        if rule_walks_tmp.empty:
+            return pd.DataFrame()
+        
+        rule_walks_tmp = rule_walks_tmp[
+            rule_walks_tmp["timestamp_0"] < rule_walks_tmp["timestamp_1"]
+        ]
+        rule_walks_tmp = rule_walks_tmp[
+            rule_walks_tmp["entity_0"] != rule_walks_tmp["entity_2"]
+        ]
+        # rule_walks_tmp_sp = rule_walks_tmp.shape
+        
+        if rule_walks_tmp.empty:
+            return pd.DataFrame()
+        
+        
+        # breakpoint()
+        entity_col = f"entity_{2}"
+        if entity_col not in rule_walks_tmp.columns:
+            return pd.DataFrame()
+        
+        cur_targets = np.array(list(set(rule_walks_tmp[entity_col])))
+        del rule_walks_tmp
+
+        rel_edges = edges[rels[1]]
+        mask = np.any(rel_edges[:, 0] == cur_targets[:, None], axis=0)
+        new_edges_2 = rel_edges[mask]
+        # breakpoint()
+        if len(new_edges_2) == 0:
+            return pd.DataFrame()
+        
+        next_df = pd.DataFrame(
+            np.hstack((new_edges_2[:, 0:1], new_edges_2[:, 2:4])),  # [sub, obj, ts]
+            columns=["entity_2", "entity_3", "timestamp_0"],
+            dtype=np.uint16,
+        )
+        rule_walks = pd.merge(rule_walks, next_df, on=["entity_2"], how='inner')
+        del next_df
+        del new_edges_2
+        del rel_edges
+        if rule_walks.empty:
+            return pd.DataFrame()
+    
+        rule_walks = rule_walks[
+            rule_walks["timestamp_1"] > rule_walks["timestamp_0"]
+        ]
+
+        rule_walks = rule_walks[
+            rule_walks["entity_1"] != rule_walks["entity_3"]
+        ]
+
+    except KeyError:
+        return pd.DataFrame()
+    
+    return rule_walks
+
 
 def match_and_get_link_star_walks(rule, edges, test_query_sub):
     rels = rule["body_rels"]
@@ -846,12 +946,20 @@ def match_and_get_walks_combined(rule, edges, test_query_sub, rules_type="cyclic
 
 
 if __name__ == "__main__":
-    rule = {'type': 'relaxed_cyclic', 'head_rel': 160, 'body_rels': [385, 372, 160], 'var_constraints': [[0, 2]], 'conf': 1.0, 'rule_supp': 209, 'body_supp': 209}
-    dataset = 'icews14'
+    # rule = {'type': 'relaxed_cyclic', 'head_rel': 160, 'body_rels': [385, 372, 160], 'var_constraints': [[0, 2]], 'conf': 1.0, 'rule_supp': 209, 'body_supp': 209}
+    rule = {'type': 'link_star', 'head_rel': 57, 'body_rels': [409, 424], 'back_conf': 0.8782961460446247, 'forw_conf': 0.8918367346938776, 'conf': 0.8850664403692512, 'back_rule_supp': 433, 'forw_rule_supp': 437, 'back_body_supp': 493, 'forw_body_supp': 490}
+    dataset = 'icews18'
     data = Grapher(dataset)
     learn_edges = store_edges(data.train_idx)
-    query = np.array([  13,  160, 1434,  314])
+    query = np.array([  39,   57, 2372,  270])
 
     edges = get_window_edges_v2(data.all_idx, query[3], learn_edges, window=0)
-    walks = match_and_get_walks_combined(rule, edges, query[0], rules_type=rule["type"], delta=0)
+    breakpoint()
+    # edges = match_link_star_body_relations(rule, edges, query[0])
+    # breakpoint()
+    # walks = get_link_star_walks_v2(rule, edges)
+    walks = match_and_get_link_star_walks_v2(rule, edges, query[0])
+    breakpoint()
     print(walks)
+    print(walks["entity_2"].unique())
+    print(len(walks["entity_2"].unique()))
