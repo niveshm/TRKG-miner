@@ -61,6 +61,7 @@ def apply_rules(i, batch_size):
     no_cands_counter = 0
     curr_ts = -1
     edges = None  # Cache edges to avoid repeated computation
+    skipped_queries = []
     skip_query = False
 
     for ind in idx_range:
@@ -191,6 +192,7 @@ def apply_rules(i, batch_size):
                 
             if skip_query:
                 print(f"Skipping query {ind} due to memory size.")
+                skipped_queries.append(ind)
                 continue
 
             if cands_dict[0]:
@@ -230,7 +232,7 @@ def apply_rules(i, batch_size):
     if edges is not None:
         del edges
         
-    return all_candidates, no_cands_counter  
+    return all_candidates, no_cands_counter, skipped_queries
 
 
 batch_size = len(test_data) // num_process
@@ -244,6 +246,7 @@ print(f"Time taken for applying rules: {total_time} seconds")
 
 no_cands_counter = 0
 all_candidates = [dict() for _ in range(len(args))]
+skipped_queries = []
 for s in range(len(args)):
     for i in range(num_process):
         all_candidates[s].update(output[i][0][s])
@@ -251,6 +254,7 @@ for s in range(len(args)):
 
 for i in range(num_process):
     no_cands_counter += output[i][1]
+    skipped_queries.append(output[i][2])
 
 
 print(f"Number of queries with no candidates: {no_cands_counter} out of {len(test_data)}")
@@ -267,5 +271,9 @@ for s in range(len(args)):
         window,
         score_func_str,
     )
+    
+    #save skipped queries to a file
+    with open(f"{rule_file_path}skipped_queries_{score_func_str}.pkl", 'wb') as f:
+        pkl.dump(skipped_queries, f)
 
 gc.collect()  # Explicitly call garbage collection at the end

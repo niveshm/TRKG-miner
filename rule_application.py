@@ -73,7 +73,7 @@ def estimate_merge_memory_gb(df_1, df_2, df_col):
         total_output_rows += count_1 * count_2
         
         # Early termination if getting too large
-        if total_output_rows > 10_000_000:  # 10M rows
+        if total_output_rows > 10000000:  # 10M rows
             break
     
     # Calculate memory usage
@@ -795,8 +795,9 @@ def match_and_get_link_star_walks_v2(rule, edges, test_query_sub):
             dtype=np.uint16,
         )
 
-        est_size = estimate_merge_memory_gb_fast(rule_walks, next_df, "entity_1")
-        if est_size >= 10:
+        est_size = estimate_merge_memory_gb(rule_walks, next_df, "entity_1")
+        if est_size > 4:
+            print(est_size)
             return pd.DataFrame(), True
 
         rule_walks_tmp = pd.merge(rule_walks, next_df, on=["entity_1"], how='inner')
@@ -836,9 +837,10 @@ def match_and_get_link_star_walks_v2(rule, edges, test_query_sub):
             columns=["entity_2", "entity_3", "timestamp_0"],
             dtype=np.uint16,
         )
-        est_size = estimate_merge_memory_gb_fast(rule_walks, next_df, "entity_2")
+        est_size = estimate_merge_memory_gb(rule_walks, next_df, "entity_2")
         
-        if est_size >= 10:
+        if est_size > 4:
+            print(est_size)
             return pd.DataFrame(), True
 
         rule_walks = pd.merge(rule_walks, next_df, on=["entity_2"], how='inner')
@@ -1041,8 +1043,9 @@ def match_and_get_walks_combined(rule, edges, test_query_sub, rules_type="cyclic
             #     next_df[f"timestamp_{i}"] = pd.to_datetime(next_df[f"timestamp_{i}"])
             
             # Merge with existing walks
-            est_size = estimate_merge_memory_gb_fast(rule_walks, next_df, f"entity_{i}")
-            if est_size >= 10:
+            est_size = estimate_merge_memory_gb(rule_walks, next_df, f"entity_{i}")
+            if est_size > 4:
+                print(est_size)
                 return pd.DataFrame(), True
 
             rule_walks = pd.merge(rule_walks, next_df, on=[f"entity_{i}"], how='inner')
