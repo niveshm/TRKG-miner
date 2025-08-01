@@ -223,4 +223,8 @@ filename = "{0}_skippedqueries_cands_r{1}_w{2}_{3}.pkl".format(
     ".".join(rule_file_name.split('.')[:-1]), rule_lengths, window, score_func_str
 )
 
+# save
+with open(f"{dir_path}{filename}", "wb") as f:
+    pkl.dump(all_candidates, f)
+
 gc.collect()  # Explicitly call garbage collection at the end
