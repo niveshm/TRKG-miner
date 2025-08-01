@@ -642,6 +642,50 @@ def check_var_constraints_acyclic(rule_walks):
 
     return rule_walks
 
+def get_candidates_v2(
+    rule, rule_walks, test_query_ts, cands_dict, cands_dict_comb, score_func, args, dicts_idx
+):
+    """
+    Get from the walks that follow the rule the answer candidates.
+    Add the confidence of the rule that leads to these candidates.
+
+    Parameters:
+        rule (dict): rule from rules_dict
+        rule_walks (pd.DataFrame): rule walks (satisfying all constraints from the rule)
+        test_query_ts (int): test query timestamp
+        cands_dict (dict): candidates along with the confidences of the rules that generated these candidates
+        cands_dict_comb (dict): combined candidates along with the confidences of the rules that generated these candidates
+        score_func (function): function for calculating the candidate score
+        args (list): arguments for the scoring function
+        dicts_idx (list): indices for candidate dictionaries
+
+    Returns:
+        cands_dict (dict): updated candidates
+    """
+    if rule["type"] == "link_star":
+        max_entity = "entity_" + str(2)
+    else:
+        max_entity = "entity_" + str(len(rule["body_rels"]))
+    
+    cands = set(rule_walks[max_entity])
+
+    for cand in cands:
+        cands_walks = rule_walks[rule_walks[max_entity] == cand]
+        for s in dicts_idx:
+            score = score_func(rule, cands_walks, test_query_ts, *args[s]).astype(
+                np.float32
+            )
+            try:
+                cands_dict[s][cand].append(score)
+            except KeyError:
+                cands_dict[s][cand] = [score]
+
+            try:
+                cands_dict_comb[s][cand].append(score)
+            except KeyError:
+                cands_dict_comb[s][cand] = [score]
+
+    return cands_dict, cands_dict_comb
 
 def get_candidates(
     rule, rule_walks, test_query_ts, cands_dict, score_func, args, dicts_idx
@@ -755,7 +799,7 @@ def verbalize_walk(walk, data):
     
 #     for i in range(1, len(rels)):
         
-def match_and_get_link_star_walks_v2(rule, edges, test_query_sub):
+def match_and_get_link_star_walks_v2(rule, edges, test_query_sub, max_memory_gb=4):
     rels = rule["body_rels"]
 
     if not rels:
@@ -795,10 +839,11 @@ def match_and_get_link_star_walks_v2(rule, edges, test_query_sub):
             dtype=np.uint16,
         )
 
-        est_size = estimate_merge_memory_gb(rule_walks, next_df, "entity_1")
-        if est_size > 4:
-            print(est_size)
-            return pd.DataFrame(), True
+        if max_memory_gb:
+                est_size = estimate_merge_memory_gb(rule_walks, next_df, f"entity_{1}")
+                if est_size > max_memory_gb:
+                    print(est_size)
+                    return pd.DataFrame(), True
 
         rule_walks_tmp = pd.merge(rule_walks, next_df, on=["entity_1"], how='inner')
         next_df = next_df[0:0]
@@ -837,11 +882,13 @@ def match_and_get_link_star_walks_v2(rule, edges, test_query_sub):
             columns=["entity_2", "entity_3", "timestamp_0"],
             dtype=np.uint16,
         )
-        est_size = estimate_merge_memory_gb(rule_walks, next_df, "entity_2")
-        
-        if est_size > 4:
-            print(est_size)
-            return pd.DataFrame(), True
+        # est_size = estimate_merge_memory_gb(rule_walks, next_df, "entity_2")
+
+        if max_memory_gb:
+                est_size = estimate_merge_memory_gb(rule_walks, next_df, f"entity_{2}")
+                if est_size > max_memory_gb:
+                    print(est_size)
+                    return pd.DataFrame(), True
 
         rule_walks = pd.merge(rule_walks, next_df, on=["entity_2"], how='inner')
         # breakpoint()
@@ -954,7 +1001,7 @@ def match_and_get_link_star_walks(rule, edges, test_query_sub):
 
 
 
-def match_and_get_walks_combined(rule, edges, test_query_sub, rules_type="cyclic", delta=0):
+def match_and_get_walks_combined(rule, edges, test_query_sub, rules_type="cyclic", delta=0, max_memory_gb=4):
     """
     Combined function that matches body relations and builds walks directly.
     This eliminates the intermediate walk_edges arrays and is more memory efficient.
@@ -1043,10 +1090,11 @@ def match_and_get_walks_combined(rule, edges, test_query_sub, rules_type="cyclic
             #     next_df[f"timestamp_{i}"] = pd.to_datetime(next_df[f"timestamp_{i}"])
             
             # Merge with existing walks
-            est_size = estimate_merge_memory_gb(rule_walks, next_df, f"entity_{i}")
-            if est_size > 4:
-                print(est_size)
-                return pd.DataFrame(), True
+            if max_memory_gb:
+                est_size = estimate_merge_memory_gb(rule_walks, next_df, f"entity_{i}")
+                if est_size > max_memory_gb:
+                    print(est_size)
+                    return pd.DataFrame(), True
 
             rule_walks = pd.merge(rule_walks, next_df, on=[f"entity_{i}"], how='inner')
             next_df = next_df[0:0]

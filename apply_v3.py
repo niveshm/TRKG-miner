@@ -47,17 +47,38 @@ score_func = score_12
 
 args = [[0.1, 0.5]] # lambda, a
 
+def noisy_or_score(cands_dict):
+    if not cands_dict:
+        return {}
+
+    scores = list(
+        map(
+            lambda x: 1 - np.prod(1 - np.array(x)),
+            cands_dict.values(),
+        )
+    )
+    cands_scores = dict(zip(cands_dict.keys(), scores))
+    noisy_or_cands = dict(
+        sorted(cands_scores.items(), key=lambda x: x[1], reverse=True)
+    )
+
+    return noisy_or_cands
+    
+
 def apply_rules(i, batch_size):
     start_idx = i * batch_size
-    end_idx = (i + 1) * batch_size #min((i + 1) * batch_size, len(test_data.all_edges))
+    end_idx = (i + 1) * batch_size
     if len(test_data) - end_idx < batch_size:
         end_idx = len(test_data)
     
-
     idx_range = range(start_idx, end_idx)
     print(f"Processing batch {i + 1}/{num_process} with batch size {end_idx-start_idx}")
 
-    all_candidates = [dict() for _ in range(len(args))]
+    # Maintain 3 separate candidate dictionaries for each type
+    all_candidates_link_star = [dict() for _ in range(len(args))]
+    all_candidates_relaxed_cyclic = [dict() for _ in range(len(args))]
+    all_candidates_combined = [dict() for _ in range(len(args))]
+    
     no_cands_counter = 0
     curr_ts = -1
     edges = None  # Cache edges to avoid repeated computation
@@ -66,8 +87,12 @@ def apply_rules(i, batch_size):
 
     for ind in idx_range:
         skip_query = False
-        query = test_data[ind] #[h, r, t, ts]
-        cands_dict = [dict() for _ in range(len(args))]
+        query = test_data[ind]  # [h, r, t, ts]
+        
+        # Separate candidate dictionaries for each rule type
+        cands_dict_link_star = [dict() for _ in range(len(args))]
+        cands_dict_relaxed_cyclic = [dict() for _ in range(len(args))]
+        cands_dict_combined = [dict() for _ in range(len(args))]
 
         # Only recompute edges when timestamp changes
         if query[3] != curr_ts:
@@ -83,7 +108,7 @@ def apply_rules(i, batch_size):
 
             for rule in rules:
                 if rule["type"] == "link_star":
-                    # walk_edges = ra.match_link_star_body_relations(rule, edges, query[0])
+                    # Process Link-Star rules
                     rule_walks, skip_query = ra.match_and_get_link_star_walks_v2(rule, edges, query[0])
 
                     if skip_query:
@@ -92,16 +117,20 @@ def apply_rules(i, batch_size):
                     # breakpoint()
                     # if not rule_walks.empty:
                     #     rule_walks = ra.check_var_constraints_acyclic(rule_walks)
-                else:
+                elif rule["type"] == "relaxed_cyclic":
                     # walk_edges = ra.match_body_relations(rule, edges, query[0])
-                    rule_walks, skip_query = ra.match_and_get_walks_combined(rule, edges, query[0], rules_type, delta=delta)
+                    rule_walks, skip_query = ra.match_and_get_walks_combined(rule, edges, query[0], rule["type"], delta=delta)
+                    
                     if skip_query:
                         break
-                    # breakpoint()
+
                     if not rule_walks.empty and rule["var_constraints"]:
                         rule_walks = ra.check_var_constraints(
                             rule["var_constraints"], rule_walks
                         )
+                else:
+                    print("Not acceptable rule")
+                    continue
                 
                 if not rule_walks.empty:
                     if rule["type"] == "link_star":
@@ -111,33 +140,68 @@ def apply_rules(i, batch_size):
                     
                     rule_walks = rule_walks[["timestamp_0", max_entity]]
 
-                    cands_dict = ra.get_candidates(
-                        rule,
-                        rule_walks,
-                        curr_ts,
-                        cands_dict,
-                        score_func,
-                        args,
-                        dicts_idx,
-                    )
+                    if rule["type"] == "link_star":
+                        cands_dict_link_star, cands_dict_combined = ra.get_candidates_v2(
+                            rule,
+                            rule_walks,
+                            curr_ts,
+                            cands_dict_link_star,
+                            cands_dict_combined,
+                            score_func,
+                            args,
+                            dicts_idx,
+                        )
+                    elif rule["type"] == "relaxed_cyclic":
+                        cands_dict_relaxed_cyclic, cands_dict_combined = ra.get_candidates_v2(
+                            rule,
+                            rule_walks,
+                            curr_ts,
+                            cands_dict_relaxed_cyclic,
+                            cands_dict_combined,
+                            score_func,
+                            args,
+                            dicts_idx,
+                        )
                     del rule_walks
                 
                     for s in dicts_idx:
-                        cands_dict[s] = {
-                            x: sorted(cands_dict[s][x], reverse=True) for x in cands_dict[s].keys()
+                        cands_dict_combined[s] = {
+                            x: sorted(cands_dict_combined[s][x], reverse=True) for x in cands_dict_combined[s].keys()
                         }
-                        cands_dict[s] = dict(
+                        cands_dict_relaxed_cyclic[s] = {
+                            x: sorted(cands_dict_relaxed_cyclic[s][x], reverse=True) for x in cands_dict_relaxed_cyclic[s].keys()
+                        }
+                        cands_dict_link_star[s] = {
+                            x: sorted(cands_dict_link_star[s][x], reverse=True) for x in cands_dict_link_star[s].keys()
+                        }
+                        cands_dict_combined[s] = dict(
                             sorted(
-                                cands_dict[s].items(),
+                                cands_dict_combined[s].items(),
                                 key=lambda item: item[1],
                                 reverse=True,
                             )
                         )
-                        top_k_scores = [v for _, v in cands_dict[s].items()][:top_k]
-                        unique_scores = list(
-                            scores for scores, _ in itertools.groupby(top_k_scores)
+                        cands_dict_relaxed_cyclic[s] = dict(
+                            sorted(
+                                cands_dict_relaxed_cyclic[s].items(),
+                                key=lambda item: item[1],
+                                reverse=True,
+                            )
                         )
-                        if len(unique_scores) >= top_k:
+                        cands_dict_link_star[s] = dict(
+                            sorted(
+                                cands_dict_link_star[s].items(),
+                                key=lambda item: item[1],
+                                reverse=True,
+                            )
+                        )
+                        top_k_scores_combined = [v for _, v in cands_dict_combined[s].items()][:top_k]
+                        top_k_scores_relaxed_cyclic = [v for _, v in cands_dict_relaxed_cyclic[s].items()][:top_k]
+                        top_k_scores_link_star = [v for _, v in cands_dict_link_star[s].items()][:top_k]
+                        unique_scores_combined = list(
+                            scores for scores, _ in itertools.groupby(top_k_scores_combined)
+                        )
+                        if len(unique_scores_combined) >= top_k:
                             dicts_idx.remove(s)
 
                     if not dicts_idx:
@@ -195,33 +259,42 @@ def apply_rules(i, batch_size):
                 skipped_queries.append(ind)
                 continue
 
-            if cands_dict[0]:
-                for s in range(len(args)):
-                    # Calculate noisy-or scores
-                    scores = list(
-                        map(
-                            lambda x: 1 - np.prod(1 - np.array(x)),
-                            cands_dict[s].values(),
-                        )
-                    )
-                    cands_scores = dict(zip(cands_dict[s].keys(), scores))
-                    noisy_or_cands = dict(
-                        sorted(cands_scores.items(), key=lambda x: x[1], reverse=True)
-                    )
-                    # breakpoint()
-                    all_candidates[s][ind] = noisy_or_cands
-            else:  # No candidates found by applying rules
-                no_cands_counter += 1
-                for s in range(len(args)):
-                    all_candidates[s][ind] = dict()
+            # if cands_dict_combined[0]:
+            for s in range(len(args)):
+                all_candidates_combined[s][ind] = noisy_or_score(cands_dict_combined[s])
+                if not all_candidates_combined[s][ind]:
+                    no_cands_counter += 1
+                all_candidates_relaxed_cyclic[s][ind] = noisy_or_score(cands_dict_relaxed_cyclic[s])
+                all_candidates_link_star[s][ind] = noisy_or_score(cands_dict_link_star[s])
+                    # # Calculate noisy-or scores
+                    # scores = list(
+                    #     map(
+                    #         lambda x: 1 - np.prod(1 - np.array(x)),
+                    #         cands_dict[s].values(),
+                    #     )
+                    # )
+                    # cands_scores = dict(zip(cands_dict[s].keys(), scores))
+                    # noisy_or_cands = dict(
+                    #     sorted(cands_scores.items(), key=lambda x: x[1], reverse=True)
+                    # )
+                    # # breakpoint()
+                    # all_candidates[s][ind] = noisy_or_cands
+            # else:  # No candidates found by applying rules
+            #     no_cands_counter += 1
+            #     for s in range(len(args)):
+            #         all_candidates[s][ind] = dict()
         
         else:  # No rules exist for this relation
             no_cands_counter += 1
             for s in range(len(args)):
-                all_candidates[s][ind] = dict()
-        
+                all_candidates_combined[s][ind] = dict()
+                all_candidates_relaxed_cyclic[s][ind] = dict()
+                all_candidates_link_star[s][ind] = dict()
+
         # Clear cands_dict to free memory
-        del cands_dict
+        del cands_dict_link_star
+        del cands_dict_relaxed_cyclic
+        del cands_dict_combined
         
         if (ind-start_idx+1) % 100 == 0 or ind == end_idx - 1:
             print(f"Process {i}: Processed query {ind - start_idx + 1}/{end_idx-start_idx}")
@@ -231,8 +304,8 @@ def apply_rules(i, batch_size):
     # Final cleanup
     if edges is not None:
         del edges
-        
-    return all_candidates, no_cands_counter, skipped_queries
+
+    return all_candidates_link_star, all_candidates_relaxed_cyclic, all_candidates_combined, no_cands_counter, skipped_queries
 
 
 batch_size = len(test_data) // num_process
@@ -244,36 +317,67 @@ end_time = datetime.now()
 total_time = (end_time - start_time).seconds
 print(f"Time taken for applying rules: {total_time} seconds")
 
+# Process outputs for all three candidate types
 no_cands_counter = 0
-all_candidates = [dict() for _ in range(len(args))]
+all_candidates_link_star = [dict() for _ in range(len(args))]
+all_candidates_relaxed_cyclic = [dict() for _ in range(len(args))]
+all_candidates_combined = [dict() for _ in range(len(args))]
 skipped_queries = []
+
 for s in range(len(args)):
     for i in range(num_process):
-        all_candidates[s].update(output[i][0][s])
+        all_candidates_link_star[s].update(output[i][0][s])
+        all_candidates_relaxed_cyclic[s].update(output[i][1][s])
+        all_candidates_combined[s].update(output[i][2][s])
         output[i][0][s].clear()
+        output[i][1][s].clear()
+        output[i][2][s].clear()
 
 for i in range(num_process):
-    no_cands_counter += output[i][1]
-    skipped_queries.append(output[i][2])
-
+    no_cands_counter += output[i][3]
+    skipped_queries.extend(output[i][4])
 
 print(f"Number of queries with no candidates: {no_cands_counter} out of {len(test_data)}")
 
+# Save all three types of candidates using ra.save_candidates function
 for s in range(len(args)):
     score_func_str = score_func.__name__ + str(args[s])
     score_func_str = score_func_str.replace(" ", "")
     
+    # Save Link-Star Only candidates
     ra.save_candidates(
         rule_file_name,
         dir_path,
-        all_candidates[s],
+        all_candidates_link_star[s],
         rule_lengths,
         window,
-        score_func_str,
+        score_func_str + "_link_star",
     )
     
-    #save skipped queries to a file
-    with open(f"{rule_file_path}skipped_queries_{score_func_str}.pkl", 'wb') as f:
+    # Save Relaxed Cyclic Only candidates
+    ra.save_candidates(
+        rule_file_name,
+        dir_path,
+        all_candidates_relaxed_cyclic[s],
+        rule_lengths,
+        window,
+        score_func_str + "_relaxed_cyclic",
+    )
+    
+    # Save Combined candidates
+    ra.save_candidates(
+        rule_file_name,
+        dir_path,
+        all_candidates_combined[s],
+        rule_lengths,
+        window,
+        score_func_str + "_combined",
+    )
+
+    # Save skipped queries to a file
+    with open(f"{rule_file_path}_skipped_queries_{score_func_str}.pkl", 'wb') as f:
         pkl.dump(skipped_queries, f)
+
+print(f"Candidates saved for all three types: Link-Star Only, Relaxed Cyclic Only, and Combined")
 
 gc.collect()  # Explicitly call garbage collection at the end
